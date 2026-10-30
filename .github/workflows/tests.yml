@@ -15,11 +15,14 @@ jobs:
       fail-fast: false
       matrix:
         python: ["3.11", "3.12", "3.13"]
+    env:
+      # overrides .python-version for every uv command in the job
+      UV_PYTHON: ${{ matrix.python }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6.8.0
-      - run: uv sync --locked --extra dev --python ${{ matrix.python }}
-      - run: uv run pytest -m "not onchain"
+      - run: uv sync --locked --extra dev
+      - run: uv run --locked --extra dev pytest -m "not onchain"
 
   native:
     name: offline tests (Rust backend)
