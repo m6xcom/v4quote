@@ -1,0 +1,148 @@
+# Route pool set for v4quote.routing on-chain tests.
+#
+# Source: the DEXes' official contract lists (Avalanche pools and DEX contracts) plus the WAVAX/USDC
+# pools already verified in pools.yaml. Pools marked "factory query" were found by querying every
+# official factory for the pair (Uniswap v3 getPool fee 100/500/3000/10000, Pharaoh V3 getPool tickSpacing
+# 1/5/10/50/100/200, LFJ v2.2 / v2.1 / Pharaoh DLMM getAllLBPairs, LFJ v1 / Uniswap v2 getPair) at Avalanche
+# block 95948731 and keeping those holding >= ~$20k (pool token balances x AaveOracle price); TVL in comments.
+# Only pools whose math v4quote covers exactly (v2, v3 and exact forks, v4 without swap hooks, LB v2.1/v2.2 incl. Pharaoh DLMM). Blackhole (Algebra), Pharaoh legacy (Solidly) and
+# oracle PMMs are not routed (core_supported = false). Every entry is re-verified against its factory by
+# test_routing_replay.py::test_route_pool_links. Hooked LB pools are used only if their hook is in
+# DEFAULT_HOOKS_ALLOWLIST at the block (otherwise best_route lists them in Route.skipped).
+#
+# Schema: id, dex, type (uniswap_v2 | uniswap_v3 | uniswap_v4 | lfj_lb), pool (v4: pool_key + pool_id),
+# tokens [token0/X, token1/Y] (symbols from `tokens`), factory, quoter, type-specific fields.
+
+avalanche:
+  tokens:
+    WAVAX: "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7"
+    USDC: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E"
+    USDt: "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7"
+    WETH.e: "0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB"
+    BTC.b: "0x152b9d0FdC40C096757F570A51E494bd4b943E50"
+    WBTC.e: "0x50b7545627a5162F82A992c33b87aDc75187B218"
+    sAVAX: "0x2b2C81e08f1Af8835a78Bb2A90AE924ACE0eA4bE"
+    # Aave v3 reserves (Pool.getReservesList at block 95948731), added for the routing replay
+    LINK.e: "0x5947BB275c521040051D82396192181b413227A3"
+    AAVE.e: "0x63a72806098Bd3D9520cC43356dD78afe5D386D9"
+    DAI.e: "0xd586E7F844cEa2F87f50152665BCbc2C279D8d70"
+    AUSD: "0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"
+    USDe: "0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34"
+    NATIVE: "0x0000000000000000000000000000000000000000"
+  wrapped_native: WAVAX
+
+  pools:
+    # ---------------------------------------------------------------- Pharaoh DLMM (LB v2.2 fork)
+    - {id: pharaoh_dlmm-wavax-usdc-bs5, dex: pharaoh_dlmm, type: lfj_lb, version: "2.2", bin_step: 5,
+       pool: "0x8aC5707f8D4BDe1d771d34c7AfD81c3922b73379", tokens: [WAVAX, USDC],
+       factory: "0xEb480050b016f6c6d45203D2346B68bDDDa23D4D", lb_quoter: "0xDdaE0aA4E93be4936c1BcC12d3001b35C75fEF40"}
+    - {id: pharaoh_dlmm-usdt-usdc-bs1, dex: pharaoh_dlmm, type: lfj_lb, version: "2.2", bin_step: 1,
+       pool: "0x16888ee58e706c253b821eaa637ae9b2cfea255c", tokens: [USDt, USDC],
+       factory: "0xEb480050b016f6c6d45203D2346B68bDDDa23D4D", lb_quoter: "0xDdaE0aA4E93be4936c1BcC12d3001b35C75fEF40"}
+    - {id: pharaoh_dlmm-btcb-usdc-bs25, dex: pharaoh_dlmm, type: lfj_lb, version: "2.2", bin_step: 25,
+       pool: "0xcd4d8252854ac05d0f7c50f1b0718f5c51d189f2", tokens: [BTC.b, USDC],
+       factory: "0xEb480050b016f6c6d45203D2346B68bDDDa23D4D", lb_quoter: "0xDdaE0aA4E93be4936c1BcC12d3001b35C75fEF40"}
+    # ---------------------------------------------------------------- LFJ LB v2.2
+    - {id: lfj_lb22-wavax-usdc-bs10, dex: lfj_lb_v2.2, type: lfj_lb, version: "2.2", bin_step: 10,
+       pool: "0x864d4e5ee7318e97483db7eb0912e09f161516ea", tokens: [WAVAX, USDC],
+       factory: "0xb43120c4745967fa9b93E79C149E66B0f2D6Fe0c", lb_quoter: "0x9A550a522BBaDFB69019b0432800Ed17855A51C3"}
+    - {id: lfj_lb22-usdt-usdc-bs1, dex: lfj_lb_v2.2, type: lfj_lb, version: "2.2", bin_step: 1,
+       pool: "0x2823299af89285ff1a1abf58db37ce57006fef5d", tokens: [USDt, USDC],
+       factory: "0xb43120c4745967fa9b93E79C149E66B0f2D6Fe0c", lb_quoter: "0x9A550a522BBaDFB69019b0432800Ed17855A51C3"}
+    - {id: lfj_lb22-savax-wavax-bs5, dex: lfj_lb_v2.2, type: lfj_lb, version: "2.2", bin_step: 5,
+       pool: "0x883ea72c2a46f7acb3820855344c43666c6cc5c0", tokens: [sAVAX, WAVAX],
+       factory: "0xb43120c4745967fa9b93E79C149E66B0f2D6Fe0c", lb_quoter: "0x9A550a522BBaDFB69019b0432800Ed17855A51C3"}
+    # factory query. Both AUSD pairs carry an LFJ rewarder hook (clone of LBHooksSimpleRewarder
+    # 0x2235CDFe...c295, flags 0x0151); added to DEFAULT_HOOKS_ALLOWLIST (simulation only) 2026-09-23:
+    # hook 0xe104964852be626ee27762712e4de521066859c9 (AUSD/USDC), 0x72ed0b6acb5c585873b3f644f99fc167c7601256 (AUSD/USDt).
+    - {id: lfj_lb22-ausd-usdc-bs1, dex: lfj_lb_v2.2, type: lfj_lb, version: "2.2", bin_step: 1,  # ~$55k
+       pool: "0x8573f98175d816d520248b5facf40d309b1c9cee", tokens: [AUSD, USDC],
+       factory: "0xb43120c4745967fa9b93E79C149E66B0f2D6Fe0c", lb_quoter: "0x9A550a522BBaDFB69019b0432800Ed17855A51C3"}
+    - {id: lfj_lb22-ausd-usdt-bs1, dex: lfj_lb_v2.2, type: lfj_lb, version: "2.2", bin_step: 1,  # ~$53k
+       pool: "0xcec377285abf370fdf872625d2742252656d631a", tokens: [AUSD, USDt],
+       factory: "0xb43120c4745967fa9b93E79C149E66B0f2D6Fe0c", lb_quoter: "0x9A550a522BBaDFB69019b0432800Ed17855A51C3"}
+    # ---------------------------------------------------------------- LFJ LB v2.1
+    - {id: lfj_lb21-btcb-usdc-bs10, dex: lfj_lb_v2.1, type: lfj_lb, version: "2.1", bin_step: 10,
+       pool: "0x4224f6f4c9280509724db2dbac314621e4465c29", tokens: [BTC.b, USDC],
+       factory: "0x8e42f2F4101563bF679975178e880FD87d3eFd4e", lb_quoter: "0x9A550a522BBaDFB69019b0432800Ed17855A51C3"}
+    - {id: lfj_lb21-wbtce-btcb-bs2, dex: lfj_lb_v2.1, type: lfj_lb, version: "2.1", bin_step: 2,
+       pool: "0xb2a765cbde23b871ffdea95880c8bea979720d36", tokens: [WBTC.e, BTC.b],
+       factory: "0x8e42f2F4101563bF679975178e880FD87d3eFd4e", lb_quoter: "0x9A550a522BBaDFB69019b0432800Ed17855A51C3"}
+    - {id: lfj_lb21-wethe-wavax-bs10, dex: lfj_lb_v2.1, type: lfj_lb, version: "2.1", bin_step: 10,
+       pool: "0x1901011a39b11271578a1283d620373abed66faa", tokens: [WETH.e, WAVAX],
+       factory: "0x8e42f2F4101563bF679975178e880FD87d3eFd4e", lb_quoter: "0x9A550a522BBaDFB69019b0432800Ed17855A51C3"}
+    - {id: lfj_lb21-wavax-usdc-bs20, dex: lfj_lb_v2.1, type: lfj_lb, version: "2.1", bin_step: 20,
+       pool: "0xd446eb1660f766d533beceef890df7a69d26f7d1", tokens: [WAVAX, USDC],
+       factory: "0x8e42f2F4101563bF679975178e880FD87d3eFd4e", lb_quoter: "0x9A550a522BBaDFB69019b0432800Ed17855A51C3"}
+    # factory query
+    - {id: lfj_lb21-wavax-usdt-bs20, dex: lfj_lb_v2.1, type: lfj_lb, version: "2.1", bin_step: 20,  # ~$144k
+       pool: "0x87eb2f90d7d0034571f343fb7429ae22c1bd9f72", tokens: [WAVAX, USDt],
+       factory: "0x8e42f2F4101563bF679975178e880FD87d3eFd4e", lb_quoter: "0x9A550a522BBaDFB69019b0432800Ed17855A51C3"}
+    - {id: lfj_lb21-daie-usdc-bs1, dex: lfj_lb_v2.1, type: lfj_lb, version: "2.1", bin_step: 1,  # ~$32k
+       pool: "0x2f1da4bafd5f2508ec2e2e425036063a374993b6", tokens: [DAI.e, USDC],
+       factory: "0x8e42f2F4101563bF679975178e880FD87d3eFd4e", lb_quoter: "0x9A550a522BBaDFB69019b0432800Ed17855A51C3"}
+    # ---------------------------------------------------------------- Pharaoh V3 (RamsesV3Pool, dynamic fee read at the block)
+    - {id: pharaoh_v3-wavax-usdc-ts10, dex: pharaoh_v3, type: uniswap_v3, tick_spacing: 10, key_type: int24,
+       uniswap_fee_protocol: false, pool: "0xf01449c0ba930b6e2caca3def3ccbd7a3e589534", tokens: [WAVAX, USDC],
+       factory: "0xAE6E5c62328ade73ceefD42228528b70c8157D0d", quoter: "0xB7297301b7CC659BB96D51754643A0Df6eEA2138"}
+    - {id: pharaoh_v3-wethe-wavax-ts5, dex: pharaoh_v3, type: uniswap_v3, tick_spacing: 5, key_type: int24,
+       uniswap_fee_protocol: false, pool: "0xff0855a9027f5f5c2bbacc4aac477afbeeefbea9", tokens: [WETH.e, WAVAX],
+       factory: "0xAE6E5c62328ade73ceefD42228528b70c8157D0d", quoter: "0xB7297301b7CC659BB96D51754643A0Df6eEA2138"}
+    - {id: pharaoh_v3-btcb-wavax-ts5, dex: pharaoh_v3, type: uniswap_v3, tick_spacing: 5, key_type: int24,
+       uniswap_fee_protocol: false, pool: "0x5ca009013f6b898d134b6798b336a4592f3b4af2", tokens: [BTC.b, WAVAX],
+       factory: "0xAE6E5c62328ade73ceefD42228528b70c8157D0d", quoter: "0xB7297301b7CC659BB96D51754643A0Df6eEA2138"}
+    - {id: pharaoh_v3-savax-wavax-ts1, dex: pharaoh_v3, type: uniswap_v3, tick_spacing: 1, key_type: int24,
+       uniswap_fee_protocol: false, pool: "0x65b9016c376604fe0af38c1e336ffcec0f8ecbbd", tokens: [sAVAX, WAVAX],
+       factory: "0xAE6E5c62328ade73ceefD42228528b70c8157D0d", quoter: "0xB7297301b7CC659BB96D51754643A0Df6eEA2138"}
+    # ---------------------------------------------------------------- Uniswap v3
+    - {id: uniswap_v3-wavax-usdc-500, dex: uniswap_v3, type: uniswap_v3, fee: 500,
+       pool: "0xfae3f424a0a47706811521e3ee268f00cfb5c45e", tokens: [WAVAX, USDC],
+       factory: "0x740b1c1de25031C31FF4fC9A62f554A55cdC1baD", quoter: "0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F"}
+    - {id: uniswap_v3-wavax-usdc-3000, dex: uniswap_v3, type: uniswap_v3, fee: 3000,
+       pool: "0x0e663593657b064e1bae76d28625df5d0ebd4421", tokens: [WAVAX, USDC],
+       factory: "0x740b1c1de25031C31FF4fC9A62f554A55cdC1baD", quoter: "0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F"}
+    - {id: uniswap_v3-usdt-usdc-100, dex: uniswap_v3, type: uniswap_v3, fee: 100,
+       pool: "0x804226ca4edb38e7ef56d16d16e92dc3223347a0", tokens: [USDt, USDC],
+       factory: "0x740b1c1de25031C31FF4fC9A62f554A55cdC1baD", quoter: "0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F"}
+    - {id: uniswap_v3-btcb-usdc-500, dex: uniswap_v3, type: uniswap_v3, fee: 500,
+       pool: "0x2e587b9e7aa638d7eb7db5fe7447513bc4d0d28b", tokens: [BTC.b, USDC],
+       factory: "0x740b1c1de25031C31FF4fC9A62f554A55cdC1baD", quoter: "0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F"}
+    - {id: uniswap_v3-wethe-wavax-500, dex: uniswap_v3, type: uniswap_v3, fee: 500,
+       pool: "0x7b602f98d71715916e7c963f51bfebc754ade2d0", tokens: [WETH.e, WAVAX],
+       factory: "0x740b1c1de25031C31FF4fC9A62f554A55cdC1baD", quoter: "0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F"}
+    # USDe/USDC is also a top pool by TVL; the rest: factory query
+    - {id: uniswap_v3-usde-usdc-500, dex: uniswap_v3, type: uniswap_v3, fee: 500,  # ~$502k
+       pool: "0x833e0ff43a8691f623cb8730ddb3e3180c7de08b", tokens: [USDe, USDC],
+       factory: "0x740b1c1de25031C31FF4fC9A62f554A55cdC1baD", quoter: "0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F"}
+    - {id: uniswap_v3-linke-wavax-10000, dex: uniswap_v3, type: uniswap_v3, fee: 10000,  # ~$92k
+       pool: "0xeb7e0191f4054868d97f33ca7a4176b226ccbd2f", tokens: [LINK.e, WAVAX],
+       factory: "0x740b1c1de25031C31FF4fC9A62f554A55cdC1baD", quoter: "0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F"}
+    - {id: uniswap_v3-usdc-daie-3000, dex: uniswap_v3, type: uniswap_v3, fee: 3000,  # ~$51k
+       pool: "0xa7141c79d3d4a9ad67ba95d2b97fe7eed9fb92b3", tokens: [USDC, DAI.e],
+       factory: "0x740b1c1de25031C31FF4fC9A62f554A55cdC1baD", quoter: "0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F"}
+    - {id: uniswap_v3-usdt-wavax-3000, dex: uniswap_v3, type: uniswap_v3, fee: 3000,  # ~$33k
+       pool: "0x27b571f3e7f7827b13d927d2d59244e3e58a7d1a", tokens: [USDt, WAVAX],
+       factory: "0x740b1c1de25031C31FF4fC9A62f554A55cdC1baD", quoter: "0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F"}
+    # ---------------------------------------------------------------- Uniswap v4 (no hooks)
+    - {id: uniswap_v4-avax-usdc-500, dex: uniswap_v4, type: uniswap_v4,
+       pool_key: {currency0: NATIVE, currency1: USDC, fee: 500, tick_spacing: 10, hooks: "0x0000000000000000000000000000000000000000"},
+       pool_id: "0x6874d3d2b99e6b75ed2fae390907e1d921d4b06b7f48fc6d3fe9c547507e369c", tokens: [NATIVE, USDC],
+       state_view: "0xc3c9e198c735a4b97e3e683f391ccbdd60b69286", quoter: "0xbe40675bb704506a3c2ccfb762dcfd1e979845c2",
+       pool_manager: "0x06380c0e0912312b5150364b9dc4542ba0dbbc85"}
+    # ---------------------------------------------------------------- x*y=k
+    - {id: uniswap_v2-wavax-usdc, dex: uniswap_v2, type: uniswap_v2, fee: [997, 1000],
+       pool: "0x6239ae4d661379b71a90c4c79f0a95297342e391", tokens: [WAVAX, USDC],
+       factory: "0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C", quoter: "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"}
+    - {id: lfj_v1-wavax-usdc, dex: lfj_v1, type: uniswap_v2, fee: [997, 1000],
+       pool: "0xf4003f4efbe8691b60249e6afbd307abe7758adb", tokens: [WAVAX, USDC],
+       factory: "0x9Ad6C38BE94206cA50bb0d90783181662f0Cfa10", quoter: "0x60aE616a2155Ee3d9A68541Ba4544862310933d4"}
+    # factory query
+    - {id: lfj_v1-aavee-wavax, dex: lfj_v1, type: uniswap_v2, fee: [997, 1000],  # ~$423k
+       pool: "0xc3e6d9f7a3a5e3e223356383c7c055ee3f26a34f", tokens: [AAVE.e, WAVAX],
+       factory: "0x9Ad6C38BE94206cA50bb0d90783181662f0Cfa10", quoter: "0x60aE616a2155Ee3d9A68541Ba4544862310933d4"}
+    - {id: lfj_v1-linke-wavax, dex: lfj_v1, type: uniswap_v2, fee: [997, 1000],  # ~$64k
+       pool: "0x6f3a0c89f611ef5dc9d96650324ac633d02265d3", tokens: [LINK.e, WAVAX],
+       factory: "0x9Ad6C38BE94206cA50bb0d90783181662f0Cfa10", quoter: "0x60aE616a2155Ee3d9A68541Ba4544862310933d4"}
+    - {id: lfj_v1-usdt-wavax, dex: lfj_v1, type: uniswap_v2, fee: [997, 1000],  # ~$50k
+       pool: "0xbb4646a764358ee93c2a9c4a147d5aded527ab73", tokens: [USDt, WAVAX],
+       factory: "0x9Ad6C38BE94206cA50bb0d90783181662f0Cfa10", quoter: "0x60aE616a2155Ee3d9A68541Ba4544862310933d4"}

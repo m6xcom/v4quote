@@ -1,0 +1,63 @@
+[project]
+name = "v4quote"
+version = "0.1.0"
+description = "Exact-integer AMM quote math (Uniswap v2/v3/v4 + hooks, Algebra Integral, Liquidity Book, ERC-4626) verified against on-chain quoters"
+readme = "README.md"
+license = "GPL-2.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "m6xcom" }]
+keywords = ["uniswap", "uniswap-v4", "amm", "defi", "quoter", "concentrated-liquidity", "algebra", "web3"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)",
+    "Operating System :: OS Independent",
+    "Topic :: Office/Business :: Financial",
+]
+dependencies = [
+    "web3>=7.6,<8",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "python-dotenv>=1.0",
+]
+# Optional native (Rust) backend of the hot exact-input quotes, crate ./native (building it needs a Rust toolchain).
+# Without it every quote is computed in Python with identical results.
+native = [
+    "v4quote-native; python_version >= '3.12'",  # abi3-py312 wheel
+]
+
+[tool.uv.sources]
+v4quote-native = { path = "native" }
+
+[tool.uv]
+# The build of ./native (extra `native`) uses exactly maturin 1.15.0 (native/pyproject.toml pins the wheel by sha256);
+# maturin never downloads a Rust toolchain itself when cargo is not on PATH (the build fails instead).
+build-constraint-dependencies = ["maturin==1.15.0"]
+
+[tool.uv.extra-build-variables]
+v4quote-native = { MATURIN_NO_INSTALL_RUST = "1" }
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/v4quote"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["native/target", ".github"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers"
+filterwarnings = [
+    "ignore::DeprecationWarning:websockets.*",
+]
+markers = [
+    "onchain: integration test that compares the math against on-chain quoters / contracts via eth_call at a pinned block (needs the chain's <CHAIN>_RPC_URL; skipped without it)",
+]

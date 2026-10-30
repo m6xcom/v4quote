@@ -1,0 +1,38 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: offline tests (pure Python, py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6.8.0
+      - run: uv sync --locked --extra dev --python ${{ matrix.python }}
+      - run: uv run pytest -m "not onchain"
+
+  native:
+    name: offline tests (Rust backend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable branch, 2026-10-30
+        with:
+          toolchain: stable
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6.8.0
+      - run: cargo test --locked
+        working-directory: native
+      - run: uv sync --locked --extra dev --extra native --python 3.12
+      - name: native backend is active
+        run: uv run python -c "from v4quote.amm import native as n; d = n.describe(); print(d); assert d['math_backend'] == 'native'"
+      - run: uv run pytest -m "not onchain"

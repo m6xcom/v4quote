@@ -1,0 +1,30 @@
+[package]
+name = "v4quote-native"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+description = "Native (Rust) port of the hot exact-integer AMM math of v4quote (bit-exact with the Python implementation)"
+license = "GPL-2.0-or-later"
+publish = false
+
+[lib]
+name = "v4quote_native"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# The Python bindings. Off for `cargo test` (pure-Rust math tests need no libpython); maturin turns it on
+# (pyproject.toml [tool.maturin] features).
+python = ["dep:pyo3"]
+
+[dependencies]
+# U256 / U512 fixed-width integers (alloy-rs/ruint, MIT). default-features off: no std-only extras are needed.
+ruint = { version = "=1.20.1", default-features = false }
+pyo3 = { version = "=0.24.2", optional = true, default-features = false, features = ["macros", "abi3-py312"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "unwind"
+overflow-checks = true
+debug-assertions = false
