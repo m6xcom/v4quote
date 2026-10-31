@@ -8,6 +8,7 @@ import pytest
 
 from v4quote.amm import serialization as ser
 from v4quote.amm.liquidity_book import FeeParameters, LBPairState, get_swap_out
+from v4quote.amm.metric_omm import MAX_POS, MetricOmmPoolState
 from v4quote.amm.uniswap_v2 import V2PairState
 from v4quote.amm.uniswap_v4 import PoolKey, V4PoolState
 from v4quote.amm.uniswap_v4 import swap as v4_swap
@@ -95,7 +96,22 @@ def gen_lb(rng):
     )
 
 
-GENERATORS = {"v2": gen_v2, "v3": gen_v3, "v4": gen_v4, "lb": gen_lb}
+def gen_metric(rng):
+    lowest = rng.randint(-40, 0)
+    highest = rng.randint(0, 40)
+    cur = rng.randint(lowest, highest)
+    lo, hi = rng.randint(lowest, cur), rng.randint(cur, highest)
+    bins = {i: (_edge(rng, (1 << 104) - 1), _edge(rng, (1 << 104) - 1), rng.randint(1, 65535), rng.randint(0, 65535),
+                rng.randint(0, 65535)) for i in range(lo, hi + 1)}
+    bid = _edge(rng, MAX_UINT128 - 2, 1)
+    return MetricOmmPoolState(
+        _addr(rng), _addr(rng), _addr(rng), rng.choice([1, 10**9, 10**12]), rng.choice([1, 10**12]), bid,
+        bid + 2, bid + 1, cur, _edge(rng, MAX_POS), rng.randint(-10**6, 10**6), bins, (lo, hi), lowest, highest,
+        rng.randint(0, 3), rng.randint(0, 10**6), rng.randint(0, 65535), tuple(_addr(rng) for _ in range(rng.randint(0, 3))),
+        _block(rng), rng.choice([None, "robinhood"]))
+
+
+GENERATORS = {"v2": gen_v2, "v3": gen_v3, "v4": gen_v4, "lb": gen_lb, "metric": gen_metric}
 
 
 @pytest.mark.parametrize("kind", sorted(GENERATORS))

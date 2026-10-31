@@ -1,6 +1,7 @@
 """Lossless JSON serialisation of pool-state snapshots (versioned ``schema``; exact integers as decimal strings).
 
-Supported: V2PairState ("v2"), V3PoolState ("v3"), V4PoolState ("v4"), LBPairState ("lb").
+Supported: V2PairState ("v2"), V3PoolState ("v3"), V4PoolState ("v4"), LBPairState ("lb"),
+MetricOmmPoolState ("metric").
 ``from_json(to_json(s)) == s`` for every valid state, field types included
 (tuples stay tuples, mappings come back as dicts).
 
@@ -27,18 +28,20 @@ from eth_utils import keccak
 from v4quote.amm.algebra_integral import AlgebraTickSnapshot
 from v4quote.amm.liquidity_book.math import FeeParameters
 from v4quote.amm.liquidity_book.pair import LBPairState
+from v4quote.amm.metric_omm import MetricOmmPoolState
 from v4quote.amm.uniswap_v2 import V2PairState
 from v4quote.amm.uniswap_v4 import PoolKey, V4PoolState
 from v4quote.amm.v3.pool import V3PoolState
 from v4quote.amm.v3.tick_bitmap import TickBitmapSnapshot
 
 SCHEMA = 1
-PoolState = Union[V2PairState, V3PoolState, V4PoolState, LBPairState]
+PoolState = Union[V2PairState, V3PoolState, V4PoolState, LBPairState, MetricOmmPoolState]
 POOL_KIND = {
     V2PairState: "v2",
     V3PoolState: "v3",
     V4PoolState: "v4",
     LBPairState: "lb",
+    MetricOmmPoolState: "metric",
 }
 _SAFE_INT = 1 << 53
 _DEC_RE = re.compile(r"-?(0|[1-9][0-9]*)")
@@ -388,17 +391,72 @@ def _lb_in(d: dict) -> LBPairState:
     )
 
 
+def _metric_out(s: MetricOmmPoolState) -> dict:
+    return {
+        "address": _str(s.address, "address"),
+        "token0": _str(s.token0, "token0"),
+        "token1": _str(s.token1, "token1"),
+        "token0_scale": _big(s.token0_scale, "token0_scale"),
+        "token1_scale": _big(s.token1_scale, "token1_scale"),
+        "bid_x64": _big(s.bid_x64, "bid_x64"),
+        "ask_x64": _big(s.ask_x64, "ask_x64"),
+        "reference_x64": _big(s.reference_x64, "reference_x64"),
+        "cur_bin": _small(s.cur_bin, "cur_bin"),
+        "pos_in_bin": _big(s.pos_in_bin, "pos_in_bin"),
+        "cur_bin_dist_e6": _small(s.cur_bin_dist_e6, "cur_bin_dist_e6"),
+        "bins": _map_out(s.bins, "bins", lambda v, n: [_big(v[0], n), _big(v[1], n), _small(v[2], n),
+                                                        _small(v[3], n), _small(v[4], n)]),
+        "loaded_range": _range_out(s.loaded_range, "loaded_range"),
+        "lowest_bin": _small(s.lowest_bin, "lowest_bin"),
+        "highest_bin": _small(s.highest_bin, "highest_bin"),
+        "pause_level": _small(s.pause_level, "pause_level"),
+        "notional_fee_e8": _small(s.notional_fee_e8, "notional_fee_e8"),
+        "bid_ask_ref_asymmetry_x8": _small(s.bid_ask_ref_asymmetry_x8, "bid_ask_ref_asymmetry_x8"),
+        "extensions": _str_tuple_out(s.extensions, "extensions"),
+        "block_number": _opt_small(s.block_number, "block_number"),
+        "chain": _opt_str(s.chain, "chain"),
+    }
+
+
+def _metric_in(d: dict) -> MetricOmmPoolState:
+    return MetricOmmPoolState(
+        address=_str(d["address"], "address"),
+        token0=_str(d["token0"], "token0"),
+        token1=_str(d["token1"], "token1"),
+        token0_scale=_big_in(d["token0_scale"], "token0_scale"),
+        token1_scale=_big_in(d["token1_scale"], "token1_scale"),
+        bid_x64=_big_in(d["bid_x64"], "bid_x64"),
+        ask_x64=_big_in(d["ask_x64"], "ask_x64"),
+        reference_x64=_big_in(d["reference_x64"], "reference_x64"),
+        cur_bin=_small_in(d["cur_bin"], "cur_bin"),
+        pos_in_bin=_big_in(d["pos_in_bin"], "pos_in_bin"),
+        cur_bin_dist_e6=_small_in(d["cur_bin_dist_e6"], "cur_bin_dist_e6"),
+        bins=_map_in(d["bins"], "bins", 6, lambda v, n: (_big_in(v[0], n), _big_in(v[1], n), _small_in(v[2], n),
+                                                         _small_in(v[3], n), _small_in(v[4], n))),
+        loaded_range=_range_in(d["loaded_range"], "loaded_range"),
+        lowest_bin=_small_in(d["lowest_bin"], "lowest_bin"),
+        highest_bin=_small_in(d["highest_bin"], "highest_bin"),
+        pause_level=_small_in(d["pause_level"], "pause_level"),
+        notional_fee_e8=_small_in(d["notional_fee_e8"], "notional_fee_e8"),
+        bid_ask_ref_asymmetry_x8=_small_in(d["bid_ask_ref_asymmetry_x8"], "bid_ask_ref_asymmetry_x8"),
+        extensions=tuple(_str(x, "extensions") for x in _list(d["extensions"], "extensions")),
+        block_number=_opt_small(d["block_number"], "block_number"),
+        chain=_opt_str(d["chain"], "chain"),
+    )
+
+
 _CODECS: dict[str, tuple[type, Callable[[Any], dict], Callable[[dict], Any]]] = {
     "v2": (V2PairState, _v2_out, _v2_in),
     "v3": (V3PoolState, _v3_out, _v3_in),
     "v4": (V4PoolState, _v4_out, _v4_in),
     "lb": (LBPairState, _lb_out, _lb_in),
+    "metric": (MetricOmmPoolState, _metric_out, _metric_in),
 }
 
 
 # ----------------------------------------------------------------------------- public API
 def pool_kind(state: PoolState) -> str:
-    """'v2' / 'v3' / 'v4' / 'lb' (the stored ``pool_kind``)."""
+    """'v2' / 'v3' / 'v4' / 'lb' / 'metric' (the stored ``pool_kind``)."""
     try:
         return POOL_KIND[type(state)]
     except KeyError:
@@ -436,6 +494,9 @@ _EXPECTED_KEYS = {
            "exhausted_below", "exhausted_above", "version", "hooks_parameters", "block_number", "chain",
            "hooks_codehash", "hooks_implementation", "hooks_implementation_codehash", "hooks_extra_parameters",
            "hooks_linked", "hooks_pair"),
+    "metric": ("address", "token0", "token1", "token0_scale", "token1_scale", "bid_x64", "ask_x64", "reference_x64",
+               "cur_bin", "pos_in_bin", "cur_bin_dist_e6", "bins", "loaded_range", "lowest_bin", "highest_bin",
+               "pause_level", "notional_fee_e8", "bid_ask_ref_asymmetry_x8", "extensions", "block_number", "chain"),
 }
 
 

@@ -39,6 +39,7 @@ CHAINS: dict[str, ChainConfig] = {
     "gnosis": ChainConfig("gnosis", 100, "GNOSIS_RPC_URL"),  # on-chain tests of the Gnosis pools (archive RPC)
     # on-chain tests of the PulseChain pools (a PUBLIC endpoint, e.g. https://pulsechain-rpc.publicnode.com)
     "pulsechain": ChainConfig("pulsechain", 369, "PULSECHAIN_RPC_URL"),
+    "robinhood": ChainConfig("robinhood", 4663, "ROBINHOOD_RPC_URL"),  # Metric OMM on-chain tests
 }
 
 

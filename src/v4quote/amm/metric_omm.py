@@ -372,6 +372,13 @@ def quote_exact_input(state: MetricOmmPoolState, zero_for_one: bool, amount_in: 
                     p0 = _ask_price_at(lo, hi, pos)
                     band_x = _band_x64(part_hi_x, bal, p0, hi, _cdiv(Q64 * Q64, p0), False)  # one token1 unit: 2^64/p0
                 part_hi_x = min(part_hi_x, bal * Q64)
+                if part_hi_x + band_x < Q64:  # the remainder buys nothing here: the pool leaves it unspent
+                    part_lo_x = part_hi_x = band_x = 0
+                    break
+                if part_lo_x - band_x < Q64:
+                    if full_out == 0 and part_hi_x + band_x < m_out * Q64:
+                        raise MathRevert("FinalAmountIsZero")  # spent or not, nothing comes out in native units
+                    raise UnsupportedPool("exact-input remainder is at the edge of buying one scaled unit")
                 total_in += rem
                 rem = 0
                 break
