@@ -1,7 +1,7 @@
 # v4quote
 
 Exact-integer AMM quote math for Python: Uniswap v2 / v3 / v4 (including some v4 hooks), Algebra Integral,
-LFJ Liquidity Book and OpenZeppelin ERC-4626 vaults. Given a
+LFJ Liquidity Book, OpenZeppelin ERC-4626 vaults and Metric OMM pools. Given a
 pool's state at a block, `v4quote` returns the same amounts as the protocol's own quoter or `swap()`, to the wei,
 including the cases where the contract reverts. It also includes a thin web3.py layer that loads pool state at a
 pinned block (Multicall3, StateView, tick-bitmap words) and an optional Rust backend that returns identical results.
@@ -26,6 +26,7 @@ pinned block (Multicall3, StateView, tick-bitmap words) and an optional Rust bac
 | `v4quote.amm.algebra_integral` | Algebra Integral (v1.2) pools: v3 math over the linked-list tick table, fee = `fee()` / the `SwapFee` log |
 | `v4quote.amm.liquidity_book` | LFJ Liquidity Book v2.1 / v2.2 and Pharaoh DLMM (`getSwapOut`, `getSwapIn`, `swap`), with an allowlist of reviewed LB hooks |
 | `v4quote.amm.erc4626` | OpenZeppelin v5 ERC-4626 vault treated as an asset <-> shares pool |
+| `v4quote.amm.metric_omm` | Metric OMM pools (oracle-priced bins): exact-output quotes; exact-input quotes that are refused (`UnsupportedPool`) when the pool's in-bin rounding could change the result. Loader and quoter wrappers in `v4quote.chain.metric` |
 | `v4quote.routing` | `best_route`: exact-input route over the states above, up to 2 hops and a 2-way split, with gas units per hop |
 | `v4quote.chain` | State loaders at a pinned block, Multicall3, quoter wrappers, `eth_getLogs` scanner, RPC from env with URL masking |
 | `v4quote.amm.serialization` | Lossless JSON (de)serialisation of every pool state |
@@ -47,6 +48,7 @@ Offline (no network). Run all of them with `uv run pytest -m "not onchain"`.
 | v4 return-delta hook models follow the hooks' contract arithmetic. These are offline tests only: there are no V4Quoter vectors for these hooks yet | `tests/unit/test_v4_rd_hooks.py` |
 | The Rust backend is bit-exact with Python: 4,200 randomized v3 quotes and 2,600 v4 quotes, 0 fallbacks (counts printed with `-s`) | `tests/unit/test_native_equivalence.py`, `tests/unit/test_native_v4.py` |
 | Serialisation round-trips every state kind | `tests/unit/test_serialization.py` |
+| Metric OMM: 1,760 `quoteHypothetical*` calls on 10 Robinhood Chain pools (eth_call on a fork of block 102703478, stock / WETH / 9- and 18-decimal pairs, both directions, exact input and output): 880/880 exact-output quotes equal to the unit, 589 exact-input quotes equal, 15 revert alike, 276 exact-input quotes refused, 0 different. Price validation (asymmetry bound) on 88 provider quotes matches the pool | `tests/unit/test_metric_omm.py` |
 
 On-chain (marker `onchain`). These compare the model with the protocol's own contracts at one pinned block. Each
 chain's tests run only when `<CHAIN>_RPC_URL` is set and are skipped otherwise. Some of them need an archive
@@ -59,6 +61,7 @@ endpoint, and rate-limited public endpoints can fail with HTTP 429.
 | Fixture pools / hooks are what the official factories and StateView return | `tests/onchain/test_address_links.py`, `tests/onchain/test_routing_replay.py` | `MONAD_RPC_URL`, `AVALANCHE_RPC_URL` |
 | ERC-4626 (sDAI) matches the deployed vault's previews on many blocks | `tests/onchain/test_erc4626_onchain.py` | `GNOSIS_RPC_URL` |
 | PulseX v1 / v2 pairs and a Uniswap v3 copy match their routers, pair K checks and QuoterV2 | `tests/onchain/test_pulsechain_onchain.py` | `PULSECHAIN_RPC_URL` |
+| Metric OMM pools (10 on Robinhood Chain) match `MetricOmmSwapQuoter.quoteHypothetical*` priced with the provider quote read at the same block: every quote equal to the unit, reverting alike, or refused by the model | `tests/onchain/test_metric_onchain.py` | `ROBINHOOD_RPC_URL` |
 
 ```bash
 uv run pytest -m "not onchain"                 # offline suite
@@ -121,6 +124,43 @@ wrong number. Reload with a larger `words_each_side` (or `None` for the full bit
 frozen dataclass: quote it as often as you like, apply a swap with `v4.apply_swap`, or store it with
 `v4quote.amm.serialization`.
 
+## Quote a Metric pool
+
+A Metric pool prices from its provider's bid / ask / reference and holds liquidity in bins around the reference.
+`load_metric_pool` reads every bin, the pool's position and the provider quote at one block; the same raw quote can be
+passed to the pool's hypothetical quoter, so both sides price identical state.
+
+```python
+from v4quote.amm import metric_omm as mo
+from v4quote.chain.metric import load_metric_pool, metric_quoter_exact_output
+from v4quote.chain.rpc import get_web3
+from v4quote.errors import UnsupportedPool
+
+POOL = "0x1E8Fc442AD3606719F7016DED6C17B56C3cA7386"  # WETH/USDG on Robinhood Chain (chainId 4663)
+w3 = get_web3("robinhood")  # reads ROBINHOOD_RPC_URL
+block = w3.eth.block_number - 2
+state = load_metric_pool(w3, POOL, block)  # UnreadableState if the provider gives no quote (stale feed, closed market)
+
+ours = mo.quote_exact_output(state, False, 10**17)  # buy 0.1 WETH: USDG in, to the unit
+prices = (state.bid_x64, state.ask_x64, state.reference_x64)
+assert (ours.amount_in, ours.amount_out) == metric_quoter_exact_output(w3, POOL, False, 10**17, prices, block)
+
+try:
+    sold = mo.quote_exact_input(state, True, 10**17)  # sell 0.1 WETH for USDG
+except UnsupportedPool:
+    sold = None  # the pool's own in-bin rounding could change the last unit: ask the quoter instead
+```
+
+```bash
+ROBINHOOD_RPC_URL=https://rpc.mainnet.chain.robinhood.com uv run python examples/quickstart_metric.py
+```
+
+Prices in a Metric state are the provider's raw quote. The public API's `bidAdj` / `askAdj` and depth already include
+the spread and fees and cannot reproduce the pool to the unit, so the model is loaded from chain state;
+`v4quote.chain.metric` also has helpers for the API's pool list and status (`check_api_quotable`). Swap extensions
+(StopLoss, velocity guards, allowlists) can only accept or reject a swap, so they never change a quoted amount, but
+they can reject it, exactly as they would make the quoter revert.
+
 ## Adding a hook model
 
 A v4 pool whose hook changes swap amounts is rejected (`UnsupportedPool`) until the hook has an exact model. To add
@@ -172,6 +212,7 @@ version (SPDX: `GPL-2.0-or-later`). It is distributed WITHOUT ANY WARRANTY; see 
 
 The swap math is an independent Python / Rust port of the arithmetic of the Uniswap v2-core, v3-core and v4-core
 contracts, and of the Algebra Integral, LFJ Liquidity Book and OpenZeppelin ERC-4626 contracts, written to reproduce
-their results exactly. Test vectors in `tests/fixtures/uniswap_v3_*.json` and in `tests/unit/test_v3_math.py` come
+their results exactly. The Metric OMM model is written from Metric's public documentation, its MIT-licensed interfaces
+and lens contracts, and quoter measurements; it contains no code from Metric's BUSL-licensed pool contracts. Test vectors in `tests/fixtures/uniswap_v3_*.json` and in `tests/unit/test_v3_math.py` come
 from the test suites of Uniswap v3-core and v4-core. This project is not affiliated with or endorsed by Uniswap Labs
-or the other protocols' teams.
+or the other protocols' teams, including Metric.
