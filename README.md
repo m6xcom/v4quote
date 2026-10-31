@@ -70,10 +70,17 @@ AVALANCHE_RPC_URL=... uv run pytest -m onchain  # on-chain comparisons for one c
 
 ## Install
 
-Requires Python >= 3.11. The native extra needs Python >= 3.12 and a Rust toolchain >= 1.90.
+Requires Python >= 3.11.
 
 ```bash
-git clone <this repo> && cd v4quote
+pip install v4quote
+```
+
+The PyPI package is pure Python. The optional Rust backend gives the same results faster; it is built from source
+and needs Python >= 3.12 and a Rust toolchain >= 1.90:
+
+```bash
+git clone https://github.com/m6xcom/v4quote && cd v4quote
 uv sync --extra dev                    # pure Python
 uv sync --extra dev --extra native     # + Rust backend (builds ./native with maturin)
 ```

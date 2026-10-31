@@ -155,7 +155,7 @@ def v4_enabled() -> bool:
 
 def backend() -> str:
     """"native" when the Rust extension is in use, else "python". Logs the choice once per process (WARNING when the
-    native backend was wanted but could not be used)."""
+    native extension is installed but could not be used)."""
     global _announced
     name = "native" if ACTIVE else "python"
     if not _announced:
@@ -163,7 +163,7 @@ def backend() -> str:
         if ACTIVE:
             LOG.info("v4quote math backend: native (v4quote_native %s, build check %s; kill switch %s=0)", BUILD or VERSION,
                      BUILD_CHECK, ENV)
-        elif _reason.startswith("disabled"):
+        elif _reason.startswith(("disabled", "not_installed")):
             LOG.info("v4quote math backend: python (%s)", _reason)
         else:
             LOG.warning("v4quote math backend: python (%s)", _reason)

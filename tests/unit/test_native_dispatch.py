@@ -123,7 +123,8 @@ def _probe(tmp_path: Path, pre: str = "", env: dict | None = None, path: Path | 
 def test_reason_not_installed(tmp_path):
     out, err = _probe(tmp_path, "sys.modules['v4quote_native'] = None  # as if the extra was not synced")
     assert out.startswith("python False not_installed: ")
-    assert "v4quote math backend: python (not_installed: " in err  # WARNING (the last-resort handler shows it)
+    # INFO, not WARNING: a plain `pip install v4quote` has no native extension and that is the normal case
+    assert "v4quote math backend" not in err
 
 
 def test_reason_broken_build_keeps_the_error_text(tmp_path):
