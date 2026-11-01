@@ -225,3 +225,13 @@ def v2_pair_amount_out(w3: Web3, pair: str, in_is_token0: bool, amount_in: int, 
     r_in, r_out = (r0, r1) if in_is_token0 else (r1, r0)
     x = amount_in * fee[0]
     return x * r_out // (r_in * fee[1] + x)
+
+
+def v3_pool_swap_sim_exact_output(w3: Web3, pool: str, zero_for_one: bool, amount_out: int,
+                                  block: int) -> tuple[int, int]:
+    """Exact-output swap of a Uniswap-v3-style pool executed by the pool itself (same probe as ``v3_pool_swap_sim``,
+    ``amountSpecified = -amount_out``) -> ``(amount_in, amount_out_received)``. ``amount_out_received < amount_out``
+    means the pool ran out of price range (QuoterV2 reverts in that case when no price limit is given)."""
+    if amount_out <= 0:
+        raise ValueError("amount_out must be positive")
+    return v3_pool_swap_sim(w3, pool, zero_for_one, -amount_out, block)
