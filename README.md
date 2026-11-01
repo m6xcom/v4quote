@@ -48,6 +48,7 @@ Offline (no network). Run all of them with `uv run pytest -m "not onchain"`.
 | v4 return-delta hook models follow the hooks' contract arithmetic. These are offline tests only: there are no V4Quoter vectors for these hooks yet | `tests/unit/test_v4_rd_hooks.py` |
 | The Rust backend is bit-exact with Python: 4,200 randomized v3 quotes and 2,600 v4 quotes, 0 fallbacks (counts printed with `-s`) | `tests/unit/test_native_equivalence.py`, `tests/unit/test_native_v4.py` |
 | Serialisation round-trips every state kind | `tests/unit/test_serialization.py` |
+| Robinhood Chain stock tokens: 625 reference quotes on 25 USDG pools of 10 stock tokens recorded at block 103531492 (Uniswap v3 vs QuoterV2; Ramses V3 and Slipstream CL forks vs the pool's own `swap()` run by eth_call; Uniswap v4 without hooks and v4 dynamic-fee pools with fee-only hooks (SessionFeeHook, FablesRWA) vs V4Quoter; exact input and output, both directions, dust to ~20 % price moves crossing up to 220 initialised ticks): 625 equal to the wei, 0 refused, 0 different | `tests/unit/test_robinhood_stocks.py` |
 | Metric OMM: 1,760 `quoteHypothetical*` calls on 10 Robinhood Chain pools (eth_call on a fork of block 102703478, stock / WETH / 9- and 18-decimal pairs, both directions, exact input and output): 880/880 exact-output quotes equal to the unit, 589 exact-input quotes equal, 15 revert alike, 276 exact-input quotes refused, 0 different. Price validation (asymmetry bound) on 88 provider quotes matches the pool | `tests/unit/test_metric_omm.py` |
 
 On-chain (marker `onchain`). These compare the model with the protocol's own contracts at one pinned block. Each
@@ -61,6 +62,7 @@ endpoint, and rate-limited public endpoints can fail with HTTP 429.
 | Fixture pools / hooks are what the official factories and StateView return | `tests/onchain/test_address_links.py`, `tests/onchain/test_routing_replay.py` | `MONAD_RPC_URL`, `AVALANCHE_RPC_URL` |
 | ERC-4626 (sDAI) matches the deployed vault's previews on many blocks | `tests/onchain/test_erc4626_onchain.py` | `GNOSIS_RPC_URL` |
 | PulseX v1 / v2 pairs and a Uniswap v3 copy match their routers, pair K checks and QuoterV2 | `tests/onchain/test_pulsechain_onchain.py` | `PULSECHAIN_RPC_URL` |
+| Robinhood Chain stock-token pools (25: v3, Ramses V3, Slipstream, v4, v4 fee-only hooks) match QuoterV2, V4Quoter or the pool's own `swap()` to the wei at a live pinned block; FablesRWA `currentFee` equals the fee read through `beforeSwap` | `tests/onchain/test_robinhood_stocks_onchain.py` | `ROBINHOOD_RPC_URL` |
 | Metric OMM pools (10 on Robinhood Chain) match `MetricOmmSwapQuoter.quoteHypothetical*` priced with the provider quote read at the same block: every quote equal to the unit, reverting alike, or refused by the model | `tests/onchain/test_metric_onchain.py` | `ROBINHOOD_RPC_URL` |
 
 ```bash
@@ -168,6 +170,39 @@ the spread and fees and cannot reproduce the pool to the unit, so the model is l
 (StopLoss, velocity guards, allowlists) can only accept or reject a swap, so they never change a quoted amount, but
 they can reject it, exactly as they would make the quoter revert.
 
+## Robinhood Chain stock tokens
+
+Robinhood Chain (chainId 4663) stock tokens (NVDA, SPCX, SPY, ...) are plain ERC-20s with 18 decimals, traded mostly
+against USDG (6 decimals). Their pools are ordinary concentrated-liquidity pools, so they are quoted with the modules
+above:
+
+| Pool type | How | Reference it is checked against |
+|---|---|---|
+| Uniswap v3 (factory `0x1f7d7550`) | `load_v3_pool` + `v4quote.amm.v3.pool` | QuoterV2 `0x33e885ed` |
+| Ramses V3 CL fork (factory `0xe0c4ceb9`, owner-settable fee) | same, `uniswap_fee_protocol=False`; fee = `fee()` at the block | the pool's own `swap()` (`v3_pool_swap_sim`, `v3_pool_swap_sim_exact_output`) |
+| Velodrome Slipstream CL clone (factory `0x1ac9db4a`) | same; fee = `fee()` = `factory.getSwapFee(pool)` at the block (dynamic) | the pool's own `swap()` |
+| Uniswap v4 without hooks | `load_v4_pool` (StateView `0xf3334192`) + `uniswap_v4` | V4Quoter `0x8dc178ef` |
+| Uniswap v4 dynamic fee + fee-only hook | `v4quote.chain.hook_fees.with_hook_fee`: calls the hook's `beforeSwap` from the PoolManager at the block and sets `hook_fee` | V4Quoter |
+
+`hook_fees.FEE_ONLY_HOOKS` lists the reviewed hooks (verified source on Sourcify, pinned code hash): SessionFeeHook
+`0xc15b155a` (SPCX; fee by US equity session, 0 for exempt senders, so the fee depends on the `sender` that calls
+`PoolManager.swap`: pass your router, or V4Quoter to compare with it) and FablesRWA `0x5eb87f69`, `0xb608a787`,
+`0x67d86050`, `0x70a9a884` (SPCX, CRCL, GLD, TSLA, AAPL; session fee curve, poke, cap, per direction). Both only
+return an LP-fee override from a `view` `beforeSwap`, with no delta. The fee is the one for a swap in a block with the
+read block's timestamp; session boundaries change it, so re-read it per block. Any other hook, or a reviewed address
+whose code changed, raises `UnsupportedPool`.
+
+Amounts are raw token units (1 token = 10**18). `uiMultiplier()` (ERC-8056) is display only: a wallet shows a
+balance multiplied by it (dividends, splits), but pools and quoters never use it, so do not apply it to quote inputs or
+outputs. `examples/quickstart_robinhood_stock.py` quotes 1 NVDA token to USDG and checks it against QuoterV2:
+
+```bash
+ROBINHOOD_RPC_URL=https://rpc.mainnet.chain.robinhood.com uv run python examples/quickstart_robinhood_stock.py
+```
+
+The public endpoint keeps state for ~6,000 blocks (~10 minutes): load and compare within that window, or record
+fixtures as `tests/onchain/rh_stocks_record.py` does.
+
 ## Adding a hook model
 
 A v4 pool whose hook changes swap amounts is rejected (`UnsupportedPool`) until the hook has an exact model. To add
@@ -196,6 +231,7 @@ one:
 
 Fee-only hooks (which only override the LP fee) do not need a new kind. Resolve the fee the hook will apply and pass
 `hook_fee=(fee_zero_for_one, fee_one_for_zero)` in the state, then verify it against V4Quoter in the same way.
+For a hook whose `beforeSwap` is a `view` fee override, add it to `v4quote.chain.hook_fees.FEE_ONLY_HOOKS` (code hash pinned) and `with_hook_fee` reads the fee from the hook itself.
 
 ## Layout
 
