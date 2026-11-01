@@ -1,6 +1,6 @@
 [project]
 name = "v4quote"
-version = "0.1.0"
+version = "0.2.0"
 description = "Exact-integer AMM quote math (Uniswap v2/v3/v4 + hooks, Algebra Integral, Liquidity Book, Metric OMM, ERC-4626) verified against on-chain quoters"
 readme = "README.md"
 license = "GPL-2.0-or-later"
