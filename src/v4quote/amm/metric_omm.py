@@ -28,6 +28,12 @@ amount, the quote raises ``UnsupportedPool`` instead of returning a number that 
 output token is scaled up internally (for example a 6-decimal stablecoin) this almost never happens; on 18/18-decimal
 pairs priced far below one (``P < 2^64``) most exact-input quotes are refused.
 
+``quote_exact_input(..., bound="lower")`` returns the low end of that band instead of refusing: ``amount_out`` is then a
+lower bound of what the pool pays (``exact`` False when it may be below the quoter's number), ``amount_in`` the input
+the order offers. The band is calibrated, not derived from the pool's code: on the recorded quotes the bound never
+exceeded the quoter (see the README). It plays the role of the safety margin in Metric's "Estimate a fill from depth",
+but from pool state the band is usually narrower.
+
 Not modelled (``UnsupportedPool``): per-bin additional fees, a non-zero notional fee, a paused pool (unless
 ``ignore_pause``, which mirrors the hypothetical quoter). Swap extensions are not evaluated: their interface can only
 accept or reject a swap (they return a selector, no amount deltas), so they cannot change a quoted amount, but they can
@@ -137,6 +143,7 @@ class MetricSwapResult:
     amount_out: int
     partial: bool
     end_bin: int
+    exact: bool = True  # False only for quote_exact_input(bound="lower") when amount_out is a lower bound
 
 
 # ----------------------------------------------------------------------------- prices
@@ -333,11 +340,15 @@ def quote_exact_output(state: MetricOmmPoolState, zero_for_one: bool, amount_out
 
 
 def quote_exact_input(state: MetricOmmPoolState, zero_for_one: bool, amount_in: int, *,
-                      ignore_pause: bool = False) -> MetricSwapResult:
+                      ignore_pause: bool = False, bound: str | None = None) -> MetricSwapResult:
     """Equivalent of ``MetricOmmSwapQuoter.quoteHypotheticalExactInputSingle`` (open price limit).
 
     Raises ``UnsupportedPool`` when the pool's in-bin rounding (not reproduced bit for bit) could change the native
-    output; see the module docstring."""
+    output; see the module docstring. ``bound="lower"`` returns the low end of the rounding band instead
+    (``exact`` False when it can differ from the pool). It still raises ``UnsupportedPool`` when the low end is zero
+    native units and the high end is not: whether the pool would revert (``FinalAmountIsZero``) is then unknown."""
+    if bound not in (None, "lower"):
+        raise ValueError('bound must be None or "lower"')
     _preflight(state, amount_in, ignore_pause)
     m_in, m_out = (state.token0_scale, state.token1_scale) if zero_for_one else (state.token1_scale, state.token0_scale)
     if amount_in * m_in > MAX_UINT128:
@@ -378,7 +389,10 @@ def quote_exact_input(state: MetricOmmPoolState, zero_for_one: bool, amount_in: 
                 if part_lo_x - band_x < Q64:
                     if full_out == 0 and part_hi_x + band_x < m_out * Q64:
                         raise MathRevert("FinalAmountIsZero")  # spent or not, nothing comes out in native units
-                    raise UnsupportedPool("exact-input remainder is at the edge of buying one scaled unit")
+                    if bound is None:
+                        raise UnsupportedPool("exact-input remainder is at the edge of buying one scaled unit")
+                    # lower bound: the remainder may buy nothing (the pool then leaves it unspent); amount_in stays
+                    # the full order, an upper bound of what the pool takes
                 total_in += rem
                 rem = 0
                 break
@@ -404,9 +418,15 @@ def quote_exact_input(state: MetricOmmPoolState, zero_for_one: bool, amount_in: 
     lo_x = full_out * Q64 + part_lo_x - band_x
     hi_x = full_out * Q64 + part_hi_x + band_x
     out_native = (full_out * Q64 + part_lo_x) // unit
-    if max(lo_x, 0) // unit != hi_x // unit:
-        raise UnsupportedPool("exact-input result is within the pool's unmodelled in-bin rounding of a native unit")
+    low_native = max(lo_x, 0) // unit
+    exact = low_native == hi_x // unit
+    if not exact:
+        if bound is None:
+            raise UnsupportedPool("exact-input result is within the pool's unmodelled in-bin rounding of a native unit")
+        if low_native == 0:
+            raise UnsupportedPool("exact-input lower bound is zero native units: the pool may pay one or revert")
+        out_native = low_native
     in_native = amount_in if not partial else _cdiv(total_in, m_in)
     if in_native == 0 or out_native == 0:
         raise MathRevert("FinalAmountIsZero")
-    return MetricSwapResult(in_native, out_native, partial, end)
+    return MetricSwapResult(in_native, out_native, partial, end, exact)

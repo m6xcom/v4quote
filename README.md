@@ -26,7 +26,7 @@ pinned block (Multicall3, StateView, tick-bitmap words) and an optional Rust bac
 | `v4quote.amm.algebra_integral` | Algebra Integral (v1.2) pools: v3 math over the linked-list tick table, fee = `fee()` / the `SwapFee` log |
 | `v4quote.amm.liquidity_book` | LFJ Liquidity Book v2.1 / v2.2 and Pharaoh DLMM (`getSwapOut`, `getSwapIn`, `swap`), with an allowlist of reviewed LB hooks |
 | `v4quote.amm.erc4626` | OpenZeppelin v5 ERC-4626 vault treated as an asset <-> shares pool |
-| `v4quote.amm.metric_omm` | Metric OMM pools (oracle-priced bins): exact-output quotes; exact-input quotes that are refused (`UnsupportedPool`) when the pool's in-bin rounding could change the result. Loader and quoter wrappers in `v4quote.chain.metric` |
+| `v4quote.amm.metric_omm` | Metric OMM pools (oracle-priced bins): exact-output quotes; exact-input quotes that are refused (`UnsupportedPool`) when the pool's in-bin rounding could change the result, or with `bound="lower"` return a lower bound of the pool's output instead. Loader and quoter wrappers in `v4quote.chain.metric` |
 | `v4quote.routing` | `best_route`: exact-input route over the states above, up to 2 hops and a 2-way split, with gas units per hop |
 | `v4quote.chain` | State loaders at a pinned block, Multicall3, quoter wrappers, `eth_getLogs` scanner, RPC from env with URL masking |
 | `v4quote.amm.serialization` | Lossless JSON (de)serialisation of every pool state |
@@ -49,7 +49,7 @@ Offline (no network). Run all of them with `uv run pytest -m "not onchain"`.
 | The Rust backend is bit-exact with Python: 4,200 randomized v3 quotes and 2,600 v4 quotes, 0 fallbacks (counts printed with `-s`) | `tests/unit/test_native_equivalence.py`, `tests/unit/test_native_v4.py` |
 | Serialisation round-trips every state kind | `tests/unit/test_serialization.py` |
 | Robinhood Chain stock tokens: 625 reference quotes on 25 USDG pools of 10 stock tokens recorded at block 103531492 (Uniswap v3 vs QuoterV2; Ramses V3 and Slipstream CL forks vs the pool's own `swap()` run by eth_call; Uniswap v4 without hooks and v4 dynamic-fee pools with fee-only hooks (SessionFeeHook, FablesRWA) vs V4Quoter; exact input and output, both directions, dust to ~20 % price moves crossing up to 220 initialised ticks): 625 equal to the wei, 0 refused, 0 different | `tests/unit/test_robinhood_stocks.py` |
-| Metric OMM: 1,760 `quoteHypothetical*` calls on 10 Robinhood Chain pools (eth_call on a fork of block 102703478, stock / WETH / 9- and 18-decimal pairs, both directions, exact input and output): 880/880 exact-output quotes equal to the unit, 589 exact-input quotes equal, 15 revert alike, 276 exact-input quotes refused, 0 different. Price validation (asymmetry bound) on 88 provider quotes matches the pool | `tests/unit/test_metric_omm.py` |
+| Metric OMM: 1,760 `quoteHypothetical*` calls on 10 Robinhood Chain pools (eth_call on a fork of block 102703478, stock / WETH / 9- and 18-decimal pairs, both directions, exact input and output): 880/880 exact-output quotes equal to the unit, 589 exact-input quotes equal, 15 revert alike, 276 exact-input quotes refused, 0 different. With `bound="lower"` 270 of the 276 get a lower bound, never above the quoter (median gap 2e-15 of the amount, 0.2 % at most on 1,000-wei dust inputs), 6 stay refused (bound of zero units). Price validation (asymmetry bound) on 88 provider quotes matches the pool | `tests/unit/test_metric_omm.py` |
 
 On-chain (marker `onchain`). These compare the model with the protocol's own contracts at one pinned block. Each
 chain's tests run only when `<CHAIN>_RPC_URL` is set and are skipped otherwise. Some of them need an archive
@@ -158,7 +158,15 @@ try:
     sold = mo.quote_exact_input(state, True, 10**17)  # sell 0.1 WETH for USDG
 except UnsupportedPool:
     sold = None  # the pool's own in-bin rounding could change the last unit: ask the quoter instead
+
+# or accept a conservative number: never more than the pool pays (exact=False when it may be lower)
+low = mo.quote_exact_input(state, True, 10**17, bound="lower")
+print(low.amount_out, low.exact)
 ```
+
+The lower bound is the low end of a rounding band calibrated on quoter measurements (it is not derived from the pool's
+code), the same idea as the safety margin in Metric's "Estimate a fill from depth" guide; read from pool state, the
+band is usually a few units wide.
 
 ```bash
 ROBINHOOD_RPC_URL=https://rpc.mainnet.chain.robinhood.com uv run python examples/quickstart_metric.py

@@ -70,6 +70,39 @@ def test_replay_totals(capsys):
     assert tot[0] >= 1400 and exact_in[0] >= 550  # regression guard on the share the model answers
 
 
+def test_lower_bound_never_above_the_quoter():
+    """bound="lower": quotes the model answers exactly are unchanged; refused ones get a lower bound of the quoter's
+    output (or stay refused when the bound is zero units); exact=True only when it equals the quoter."""
+    answered = unchanged = 0
+    for pool in DATA["pools"]:
+        state = metric_state_from_snapshot(pool["snapshot"])
+        for zfo, exact_in, amount, q_in, q_out, err in pool["quotes"]:
+            if not exact_in:
+                continue
+            try:
+                ref = mo.quote_exact_input(state, zfo, int(amount))
+            except MathRevert:
+                continue
+            except UnsupportedPool:
+                ref = None
+            try:
+                r = mo.quote_exact_input(state, zfo, int(amount), bound="lower")
+            except UnsupportedPool:
+                assert ref is None
+                continue
+            if ref is not None:
+                assert r == ref and r.exact
+                unchanged += 1
+                continue
+            assert err is None, (pool["name"], amount)  # the pool did not revert where the bound answered
+            assert r.amount_in == int(amount) and r.amount_out <= int(q_out), (pool["name"], zfo, amount)
+            assert not r.exact or r.amount_out == int(q_out)
+            answered += 1
+    assert unchanged >= 550 and answered >= 260
+    with pytest.raises(ValueError):
+        mo.quote_exact_input(_state(), True, 10 ** 15, bound="upper")
+
+
 def test_price_checks_match_pool():
     n = 0
     for pool in DATA["pools"]:
